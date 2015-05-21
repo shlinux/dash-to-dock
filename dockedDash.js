@@ -350,6 +350,13 @@ const dockedDash = new Lang.Class({
                 'status-changed',
                 Lang.bind(this, this._updateDashVisibility)
             ],
+            // overwrite animation function moving the a newly created window if
+            // it overlap the dock
+            [
+                global.window_manager,
+                'map',
+                Lang.bind(this, this._overwriteMapWindow)
+            ],
             // Keep dragged icon consistent in size with this dash
             [
                 this.dash,
@@ -1110,6 +1117,59 @@ const dockedDash = new Lang.Class({
         );
 
         this._intellihide.updateTargetBox(this.staticBox);
+    },
+
+
+    // This function clear the window creation animation and move the window
+    // in order to avoid overlap with the dock
+    _overwriteMapWindow: function(shellwm, actor){
+
+        // Only move those windows taken into account by the Intellihide module.
+        if (Intellihide.handledWindowTypes.indexOf(actor.meta_window.get_window_type()) == -1)
+            return
+
+        let gap = 5 ; // Keep a minimum gap between newly created windows
+
+        //Main.wm._mapWindowDone(shellwm, actor);  //  This clear the animation as well
+        Main.wm._mapWindowOverwrite(shellwm, actor); // This clear the animation as well
+
+        let rect = actor.meta_window.get_outer_rect();
+
+        // push the window away from the dock
+        // TODO if the window is too big resize it as well
+        let move_x = 0;
+        let move_y = 0;
+
+        if (this._isHorizontal) {
+            let top_overlap = this.staticBox.y2 + gap - rect.y; // the positive top overlap
+            let bottom_overlap = (rect.height + rect.y) - this.staticBox.y1 + gap; // the positive bottom overlap
+
+            if (bottom_overlap < top_overlap) {
+                // move up
+                move_y = Math.min(-bottom_overlap, 0)
+            } else {
+                // move down
+                move_y = Math.max(top_overlap, 0)
+            }
+        } else {
+            let left_overlap = this.staticBox.x2 + gap - rect.x; // the positive left overlap
+            let right_overlap = (rect.width + rect.x) - this.staticBox.x1 + gap; // the positive right overlap
+
+            if (right_overlap < left_overlap) {
+                // move left
+                move_x = Math.min(-right_overlap, 0)
+            } else {
+                // move right
+                move_x = Math.max(left_overlap, 0)
+            }
+        }
+
+        global.log(actor.meta_window.get_description());
+        global.log([move_x, move_y]);
+
+        // is any difference between true and false ? (user action, what does it mean?)
+        actor.meta_window.move_frame(true, rect.x + move_x, rect.y + move_y );
+
     },
 
     // Adjust Panel corners
