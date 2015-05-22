@@ -1133,23 +1133,46 @@ const dockedDash = new Lang.Class({
         //Main.wm._mapWindowDone(shellwm, actor);  //  This clear the animation as well
         Main.wm._mapWindowOverwrite(shellwm, actor); // This clear the animation as well
 
+        // get workarea space
+        let ws = global.screen.get_workspace_by_index(0);
+        let work_area
+        let monitorIndex = this._settings.get_int('preferred-monitor');
+        if (monitorIndex >0 && monitorIndex< Main.layoutManager.monitors.length)
+            work_area = ws.get_work_area_for_monitor(monitorIndex);
+        else
+            work_area = ws.get_work_area_for_monitor(Main.layoutManager.primaryIndex);
+
         let rect = actor.meta_window.get_outer_rect();
 
         // push the window away from the dock
         // TODO if the window is too big resize it as well
         let move_x = 0;
         let move_y = 0;
+        let reduce_x = 0;
+        let reduce_y = 0;
 
         if (this._isHorizontal) {
+
             let top_overlap = this.staticBox.y2 + gap - rect.y; // the positive top overlap
             let bottom_overlap = (rect.height + rect.y) - this.staticBox.y1 + gap; // the positive bottom overlap
 
             if (bottom_overlap < top_overlap) {
                 // move up
                 move_y = Math.min(-bottom_overlap, 0)
+                // resize the window
+                let overflow = (rect.y + move_y) - (work_area.y + gap);
+                if (overflow < 0){
+                    move_y -=  overflow;
+                    reduce_y = -overflow;
+                }
             } else {
                 // move down
                 move_y = Math.max(top_overlap, 0)
+                // resize the window
+                let overflow = (work_area.y + work_area.height - gap) - (rect.y + move_y + rect.height);
+                if (overflow < 0){
+                    reduce_y = -overflow;
+                }
             }
         } else {
             let left_overlap = this.staticBox.x2 + gap - rect.x; // the positive left overlap
@@ -1158,17 +1181,40 @@ const dockedDash = new Lang.Class({
             if (right_overlap < left_overlap) {
                 // move left
                 move_x = Math.min(-right_overlap, 0)
+                // resize the window
+                let overflow = rect.x + move_x - work_area.x - gap;
+                if (overflow < 0){
+                    move_x -=  overflow;
+                    reduce_x = -overflow;
+                }
             } else {
                 // move right
                 move_x = Math.max(left_overlap, 0)
+                // resize the window
+                let overflow = (work_area.x + work_area.width  - gap) - (rect.x + move_x + rect.width);
+                if (overflow < 0){
+                    reduce_x = -overflow;
+                }
             }
         }
 
         global.log(actor.meta_window.get_description());
-        global.log([move_x, move_y]);
+        global.log([rect.x, rect.y, rect.x + rect.width, rect.y + rect.height])
+        global.log([move_x, move_y, reduce_x, reduce_y]);
 
         // is any difference between true and false ? (user action, what does it mean?)
-        actor.meta_window.move_frame(true, rect.x + move_x, rect.y + move_y );
+        //actor.meta_window.move_frame(true, rect.x + move_x, rect.y + move_y );
+        actor.meta_window.move_resize_frame(false,
+                                            rect.x + move_x,
+                                            rect.y + move_y,
+                                            rect.width - reduce_x,
+                                            rect.height - reduce_y
+                                            );
+
+        global.log([                                            rect.x + move_x,
+                                            rect.y + move_y,
+                                            rect.width - reduce_x,
+                                            rect.height - reduce_y])
 
     },
 
