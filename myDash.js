@@ -10,12 +10,14 @@ const Shell = imports.gi.Shell;
 const St = imports.gi.St;
 const Mainloop = imports.mainloop;
 
+const AltTab = imports.ui.altTab;
 const AppDisplay = imports.ui.appDisplay;
 const AppFavorites = imports.ui.appFavorites;
 const Dash = imports.ui.dash;
 const DND = imports.ui.dnd;
 const IconGrid = imports.ui.iconGrid;
 const Main = imports.ui.main;
+const Params = imports.misc.params;
 const PopupMenu = imports.ui.popupMenu;
 const Tweener = imports.ui.tweener;
 const Util = imports.misc.util;
@@ -50,7 +52,7 @@ function getPosition(settings) {
  *   (https://github.com/deuill/shell-extension-quitfromdash)
  */
 
-const myAppIconMenu = new Lang.Class({
+const myAppIconMenuOld = new Lang.Class({
     Name: 'myAppIconMenu',
     Extends: AppDisplay.AppIconMenu,
 
@@ -100,6 +102,251 @@ const myAppIconMenu = new Lang.Class({
         }
     }
 });
+
+
+const WindowPreviewMenuItem = new Lang.Class({
+    Name: 'WindowPreviewMenuItem',
+    Extends: PopupMenu.PopupBaseMenuItem,
+
+    _init: function(window, params) {
+        this.window = window;
+        params = Params.parse(params, { style_class: 'app-well-preview-menu-item' });
+
+        this.parent(params);
+
+        let mutterWindow = window.get_compositor_private();
+        let windowTexture = mutterWindow.get_texture();
+        let [width, height] = windowTexture.get_size();
+
+        const size = 192;
+        let scale = Math.min(1.0, size / width);
+
+        let clone = new Clutter.Clone ({ source: windowTexture,
+                                         reactive: true,
+                                         width: width * scale,
+                                         height: height * scale });
+
+        let label = new St.Label({ text: window.get_title() });
+        let labelBin = new St.Bin({ child: label,
+                                    x_align: St.Align.MIDDLE });
+
+        let box = new St.BoxLayout({ vertical: true });
+        box.add(clone, { x_fill: false });
+        box.add(labelBin);
+        //this.addActor(box, { expand: true });
+        this.actor.add_actor(box, { expand: true });
+    }
+});
+
+
+/**
+ * Alternative popupmenu with windows thumbanails
+ *
+ *
+ **/
+const myAppIconMenu = new Lang.Class({
+//const ThumbnailsIconMenu = new Lang.Class({
+    Name: 'AppIconMenu',
+    Extends: PopupMenu.PopupMenu,
+
+    _init: function(source, settings) {
+        let side = St.Side.LEFT;
+        if (Clutter.get_default_text_direction() == Clutter.TextDirection.RTL)
+            side = St.Side.RIGHT;
+
+        this.parent(source.actor, 0.5, side);
+
+        this._thumbnails = null;
+        this._windows = null;
+
+        // We want to keep the item hovered while the menu is up
+        this.blockSourceEvents = true;
+
+        this._source = source;
+
+        this.actor.add_style_class_name('app-well-menu');
+
+        // Chain our visibility and lifecycle to that of the source
+        source.actor.connect('notify::mapped', Lang.bind(this, function () {
+            if (!source.actor.mapped)
+                this.close();
+        }));
+        source.actor.connect('destroy', Lang.bind(this, function () { this.actor.destroy(); }));
+
+        Main.uiGroup.add_actor(this.actor);
+    },
+
+    _redisplay: function() {
+        //this.removeAll();
+        if (this._thumbnails)
+            this._thumbnails.actor.destroy();
+
+        //let item = this._appendMenuItem(_("Test"));
+
+        this._windows = this._source.app.get_windows().filter(function(w) {
+            return !w.skip_taskbar;
+        });
+
+        /*
+        for (let i = 0; i< windows.length; i++) {
+            
+            let mutterWindow = windows[i].get_compositor_private();
+                if (!mutterWindow)
+                    continue;
+
+
+            let thumbnailSize = 250;
+            let thumb = AltTab._createWindowClone(mutterWindow, thumbnailSize);
+
+            let box = new St.BoxLayout({ style_class: 'thumbnail-box',
+                                         vertical: true });
+
+            let bin = new St.Bin({ style_class: 'thumbnail' });
+
+            box.add_actor(bin);
+            bin.add_actor(thumb);
+
+            //this.box.add(box);
+            let item = new WindowPreviewMenuItem(windows[i])
+            //this.addMenuItem(item);
+
+        }*/
+
+        
+        this._thumbnails = new AltTab.ThumbnailList(this._windows);
+
+        this._thumbnails.connect('item-activated', Lang.bind(this, this._windowActivated));
+        this._thumbnails.connect('item-entered', Lang.bind(this, this._windowEntered));
+
+        this.box.add_actor(this._thumbnails.actor);
+
+        this._thumbnails.actor.get_allocation_box();
+        this._thumbnails.addClones(200);
+
+
+        /*
+
+        // Display the app windows menu items and the separator between windows
+        // of the current desktop and other windows.
+        let activeWorkspace = global.screen.get_active_workspace();
+        let separatorShown = windows.length > 0 && windows[0].get_workspace() != activeWorkspace;
+
+        for (let i = 0; i < windows.length; i++) {
+            let window = windows[i];
+            if (!separatorShown && window.get_workspace() != activeWorkspace) {
+                this._appendSeparator();
+                separatorShown = true;
+            }
+            let item = this._appendMenuItem(window.title);
+            item.connect('activate', Lang.bind(this, function() {
+                this.emit('activate-window', window);
+            }));
+        }
+
+        if (!this._source.app.is_window_backed()) {
+            this._appendSeparator();
+
+            let appInfo = this._source.app.get_app_info();
+            let actions = appInfo.list_actions();
+            if (this._source.app.can_open_new_window() &&
+                actions.indexOf('new-window') == -1) {
+                this._newWindowMenuItem = this._appendMenuItem(_("New Window"));
+                this._newWindowMenuItem.connect('activate', Lang.bind(this, function() {
+                    if (this._source.app.state == Shell.AppState.STOPPED)
+                        this._source.animateLaunch();
+
+                    this._source.app.open_new_window(-1);
+                    this.emit('activate-window', null);
+                }));
+                this._appendSeparator();
+            }
+
+            for (let i = 0; i < actions.length; i++) {
+                let action = actions[i];
+                let item = this._appendMenuItem(appInfo.get_action_name(action));
+                item.connect('activate', Lang.bind(this, function(emitter, event) {
+                    this._source.app.launch_action(action, event.get_time(), -1);
+                    this.emit('activate-window', null);
+                }));
+            }
+
+            let canFavorite = global.settings.is_writable('favorite-apps');
+
+            if (canFavorite) {
+                this._appendSeparator();
+
+                let isFavorite = AppFavorites.getAppFavorites().isFavorite(this._source.app.get_id());
+
+                if (isFavorite) {
+                    let item = this._appendMenuItem(_("Remove from Favorites"));
+                    item.connect('activate', Lang.bind(this, function() {
+                        let favs = AppFavorites.getAppFavorites();
+                        favs.removeFavorite(this._source.app.get_id());
+                    }));
+                } else {
+                    let item = this._appendMenuItem(_("Add to Favorites"));
+                    item.connect('activate', Lang.bind(this, function() {
+                        let favs = AppFavorites.getAppFavorites();
+                        favs.addFavorite(this._source.app.get_id());
+                    }));
+                }
+            }
+
+            if (Shell.AppSystem.get_default().lookup_app('org.gnome.Software.desktop')) {
+                this._appendSeparator();
+                let item = this._appendMenuItem(_("Show Details"));
+                item.connect('activate', Lang.bind(this, function() {
+                    let id = this._source.app.get_id();
+                    let args = GLib.Variant.new('(ss)', [id, '']);
+                    Gio.DBus.get(Gio.BusType.SESSION, null,
+                        function(o, res) {
+                            let bus = Gio.DBus.get_finish(res);
+                            bus.call('org.gnome.Software',
+                                     '/org/gnome/Software',
+                                     'org.gtk.Actions', 'Activate',
+                                     GLib.Variant.new('(sava{sv})',
+                                                      ['details', [args], null]),
+                                     null, 0, -1, null, null);
+                            Main.overview.hide();
+                        });
+                }));
+            }
+        }
+    */
+    },
+
+    _windowEntered : function(thumbnailList, n) {
+        thumbnailList.highlight(n, false/*forceAppFocus*/);
+    },
+
+    _windowActivated : function(thumbnailList, n) {
+        //Main.activateWindow(this._windows[n]);
+        this.close();
+        this.emit('activate-window', this._windows[n]);
+        
+        //this.destroy();
+        //this.emit('activate', null);
+    },
+
+    _appendSeparator: function () {
+        let separator = new PopupMenu.PopupSeparatorMenuItem();
+        this.addMenuItem(separator);
+    },
+
+    _appendMenuItem: function(labelText) {
+        // FIXME: app-well-menu-item style
+        let item = new PopupMenu.PopupMenuItem(labelText);
+        this.addMenuItem(item);
+        return item;
+    },
+
+    popup: function(activatingButton) {
+        this._redisplay();
+        this.open();
+    }
+});
+//Signals.addSignalMethods(AppIconMenu.prototype);
+Signals.addSignalMethods(myAppIconMenu.prototype);
 
 /**
  * Extend DashItemContainer
