@@ -52,7 +52,7 @@ function getPosition(settings) {
  *   (https://github.com/deuill/shell-extension-quitfromdash)
  */
 
-const myAppIconMenuOld = new Lang.Class({
+const myAppIconMenu = new Lang.Class({
     Name: 'myAppIconMenu',
     Extends: AppDisplay.AppIconMenu,
 
@@ -77,154 +77,11 @@ const myAppIconMenuOld = new Lang.Class({
     },
 
     _redisplay: function() {
+        this.removeAll();
 
-        this.parent();
-
-        // quit menu
-        let app = this._source.app;
-        let count = getAppInterestingWindows(app).length;
-        if ( count > 0) {
-            this._appendSeparator();
-            let quitFromDashMenuText = "";
-            if (count == 1)
-                quitFromDashMenuText = _("Quit");
-            else
-                quitFromDashMenuText = _("Quit " + count + " Windows");
-
-            this._quitfromDashMenuItem = this._appendMenuItem(quitFromDashMenuText);
-            this._quitfromDashMenuItem.connect('activate', Lang.bind(this, function() {
-                let app = this._source.app;
-                let windows = app.get_windows();
-                for (let i = 0; i < windows.length; i++) {
-                    this._closeWindowInstance(windows[i])
-                }
-            }));
-        }
-    }
-});
-
-
-const WindowPreviewMenuItem = new Lang.Class({
-    Name: 'WindowPreviewMenuItem',
-    Extends: PopupMenu.PopupBaseMenuItem,
-
-    _init: function(window, params) {
-        this.window = window;
-        params = Params.parse(params, { style_class: 'app-well-preview-menu-item' });
-
-        this.parent(params);
-
-        let mutterWindow = window.get_compositor_private();
-        let windowTexture = mutterWindow.get_texture();
-        let [width, height] = windowTexture.get_size();
-
-        const size = 192;
-        let scale = Math.min(1.0, size / width);
-
-        let clone = new Clutter.Clone ({ source: windowTexture,
-                                         reactive: true,
-                                         width: width * scale,
-                                         height: height * scale });
-
-        let label = new St.Label({ text: window.get_title() });
-        let labelBin = new St.Bin({ child: label,
-                                    x_align: St.Align.MIDDLE });
-
-        let box = new St.BoxLayout({ vertical: true });
-        box.add(clone, { x_fill: false });
-        box.add(labelBin);
-        //this.addActor(box, { expand: true });
-        this.actor.add_actor(box, { expand: true });
-    }
-});
-
-
-/**
- * Alternative popupmenu with windows thumbanails
- *
- *
- **/
-const myAppIconMenu = new Lang.Class({
-//const ThumbnailsIconMenu = new Lang.Class({
-    Name: 'AppIconMenu',
-    Extends: PopupMenu.PopupMenu,
-
-    _init: function(source, settings) {
-        let side = St.Side.LEFT;
-        if (Clutter.get_default_text_direction() == Clutter.TextDirection.RTL)
-            side = St.Side.RIGHT;
-
-        this.parent(source.actor, 0.5, side);
-
-        this._thumbnails = null;
-        this._windows = null;
-
-        // We want to keep the item hovered while the menu is up
-        this.blockSourceEvents = true;
-
-        this._source = source;
-
-        this.actor.add_style_class_name('app-well-menu');
-
-        // Chain our visibility and lifecycle to that of the source
-        source.actor.connect('notify::mapped', Lang.bind(this, function () {
-            if (!source.actor.mapped)
-                this.close();
-        }));
-        source.actor.connect('destroy', Lang.bind(this, function () { this.actor.destroy(); }));
-
-        Main.uiGroup.add_actor(this.actor);
-    },
-
-    _redisplay: function() {
-        //this.removeAll();
-        if (this._thumbnails)
-            this._thumbnails.actor.destroy();
-
-        //let item = this._appendMenuItem(_("Test"));
-
-        this._windows = this._source.app.get_windows().filter(function(w) {
+        let windows = this._source.app.get_windows().filter(function(w) {
             return !w.skip_taskbar;
         });
-
-        /*
-        for (let i = 0; i< windows.length; i++) {
-            
-            let mutterWindow = windows[i].get_compositor_private();
-                if (!mutterWindow)
-                    continue;
-
-
-            let thumbnailSize = 250;
-            let thumb = AltTab._createWindowClone(mutterWindow, thumbnailSize);
-
-            let box = new St.BoxLayout({ style_class: 'thumbnail-box',
-                                         vertical: true });
-
-            let bin = new St.Bin({ style_class: 'thumbnail' });
-
-            box.add_actor(bin);
-            bin.add_actor(thumb);
-
-            //this.box.add(box);
-            let item = new WindowPreviewMenuItem(windows[i])
-            //this.addMenuItem(item);
-
-        }*/
-
-        
-        this._thumbnails = new AltTab.ThumbnailList(this._windows);
-
-        this._thumbnails.connect('item-activated', Lang.bind(this, this._windowActivated));
-        this._thumbnails.connect('item-entered', Lang.bind(this, this._windowEntered));
-
-        this.box.add_actor(this._thumbnails.actor);
-
-        this._thumbnails.actor.get_allocation_box();
-        this._thumbnails.addClones(200);
-
-
-        /*
 
         // Display the app windows menu items and the separator between windows
         // of the current desktop and other windows.
@@ -237,7 +94,9 @@ const myAppIconMenu = new Lang.Class({
                 this._appendSeparator();
                 separatorShown = true;
             }
-            let item = this._appendMenuItem(window.title);
+            //let item = this._appendMenuItem(window.title);
+            let item = new WindowPreviewMenuItem(window);
+            this.addMenuItem(item);
             item.connect('activate', Lang.bind(this, function() {
                 this.emit('activate-window', window);
             }));
@@ -312,40 +171,73 @@ const myAppIconMenu = new Lang.Class({
                 }));
             }
         }
-    */
-    },
 
-    _windowEntered : function(thumbnailList, n) {
-        thumbnailList.highlight(n, false/*forceAppFocus*/);
-    },
+        // quit menu
+        let app = this._source.app;
+        let count = getAppInterestingWindows(app).length;
+        if ( count > 0) {
+            this._appendSeparator();
+            let quitFromDashMenuText = "";
+            if (count == 1)
+                quitFromDashMenuText = _("Quit");
+            else
+                quitFromDashMenuText = _("Quit " + count + " Windows");
 
-    _windowActivated : function(thumbnailList, n) {
-        //Main.activateWindow(this._windows[n]);
-        this.close();
-        this.emit('activate-window', this._windows[n]);
-        
-        //this.destroy();
-        //this.emit('activate', null);
-    },
-
-    _appendSeparator: function () {
-        let separator = new PopupMenu.PopupSeparatorMenuItem();
-        this.addMenuItem(separator);
-    },
-
-    _appendMenuItem: function(labelText) {
-        // FIXME: app-well-menu-item style
-        let item = new PopupMenu.PopupMenuItem(labelText);
-        this.addMenuItem(item);
-        return item;
-    },
-
-    popup: function(activatingButton) {
-        this._redisplay();
-        this.open();
+            this._quitfromDashMenuItem = this._appendMenuItem(quitFromDashMenuText);
+            this._quitfromDashMenuItem.connect('activate', Lang.bind(this, function() {
+                let app = this._source.app;
+                let windows = app.get_windows();
+                for (let i = 0; i < windows.length; i++) {
+                    this._closeWindowInstance(windows[i])
+                }
+            }));
+        }
     }
 });
-//Signals.addSignalMethods(AppIconMenu.prototype);
+
+
+const WindowPreviewMenuItem = new Lang.Class({
+    Name: 'WindowPreviewMenuItem',
+    Extends: PopupMenu.PopupBaseMenuItem,
+
+    _init: function(window, params) {
+        this.window = window;
+        params = Params.parse(params, { style_class: 'app-well-preview-menu-item' });
+
+        this.parent(params);
+
+        let mutterWindow = window.get_compositor_private();
+        let windowTexture = mutterWindow.get_texture();
+        let [width, height] = windowTexture.get_size();
+
+        const size = 250;
+        let scale = Math.min(1.0, size / width);
+
+        let clone = new Clutter.Clone ({ source: windowTexture,
+                                         reactive: true,
+                                         width: width * scale,
+                                         height: height * scale });
+        let title =  window.get_title();
+
+        const MAX = 50;
+        if (title.length > MAX ) {
+            title = title.substr(0,MAX-3);
+            title = title + '...';
+        }
+
+        let label = new St.Label({ text: title});
+        let labelBin = new St.Bin({ child: label,
+        //                            x_align: St.Align.MIDDLE });
+                                      x_align: St.Align.START});
+
+        let box = new St.BoxLayout({ vertical: true });
+        //box.add(clone, { x_fill: false });
+        box.add(clone, { x_fill: false, x_align: St.Align.START });
+        box.add(labelBin);
+        //this.addActor(box, { expand: true });
+        this.actor.add_actor(box, { expand: false});
+    }
+});
 Signals.addSignalMethods(myAppIconMenu.prototype);
 
 /**
