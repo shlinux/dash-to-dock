@@ -83,6 +83,20 @@ const myAppIconMenu = new Lang.Class({
             return !w.skip_taskbar;
         });
 
+        let submenuItem = new PopupMenu.PopupSubMenuMenuItem(_('All windows'), false);
+        this.addMenuItem(submenuItem);
+
+        /*let scroll = new St.ScrollView({y_expand:true, y_fill:true});
+        let box = new St.BoxLayout({vertical: true});
+        scroll.height = 1000;
+        scroll.add_actor(box);
+        this.box.add(scroll);*/
+
+/*        this._scrollView = new St.ScrollView({ name: 'dashtodockDashScrollview',
+                                               hscrollbar_policy: Gtk.PolicyType.NEVER,
+                                               vscrollbar_policy: Gtk.PolicyType.NEVER,
+                                               enable_mouse_scrolling: false });*/
+
         // Display the app windows menu items and the separator between windows
         // of the current desktop and other windows.
         let activeWorkspace = global.screen.get_active_workspace();
@@ -96,11 +110,18 @@ const myAppIconMenu = new Lang.Class({
             }
             //let item = this._appendMenuItem(window.title);
             let item = new WindowPreviewMenuItem(window);
-            this.addMenuItem(item);
+            //this.addMenuItem(item);
+            //box.add(item.actor);
+            submenuItem.menu.addMenuItem(item);
             item.connect('activate', Lang.bind(this, function() {
                 this.emit('activate-window', window);
             }));
+            // HACK1 try to pre-size the menu
+            submenuItem.actor.width = item.actor.width;
         }
+
+            //submenuItem.menu._needsScrollbar = function(){return false};
+          //submenuItem.menu.open()
 
         if (!this._source.app.is_window_backed()) {
             this._appendSeparator();
@@ -1567,10 +1588,21 @@ const myAppIcon = new Lang.Class({
 
         if (!this._menu) {
             this._menu = new myAppIconMenu(this, this._settings);
+
             this._menu.connect('activate-window', Lang.bind(this, function (menu, window) {
                 this.activateWindow(window);
             }));
             this._menu.connect('open-state-changed', Lang.bind(this, function (menu, isPoppedUp) {
+
+                global.log('+****************************++++');
+                // Setting the max-height won't do any good if the minimum height of the
+                // menu is higher then the screen; it's useful if part of the menu is
+                // scrollable so the minimum height is smaller than the natural height
+                let workArea = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+                let verticalMargins = this._menu.actor.margin_top + this._menu.actor.margin_bottom;
+                this._menu.actor.style = ('max-height: ' + Math.round(workArea.height - verticalMargins) + 'px;');
+                //this._menu.actor.style = ('max-height: 200px');
+
                 if (!isPoppedUp)
                     this._onMenuPoppedDown();
             }));
