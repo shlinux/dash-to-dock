@@ -79,49 +79,56 @@ const myAppIconMenu = new Lang.Class({
     _redisplay: function() {
         this.removeAll();
 
+        const show_window_preview = true;
+
         let windows = this._source.app.get_windows().filter(function(w) {
             return !w.skip_taskbar;
         });
 
-        let submenuItem = new PopupMenu.PopupSubMenuMenuItem(_('All windows'), false);
-        this.addMenuItem(submenuItem);
-
-        /*let scroll = new St.ScrollView({y_expand:true, y_fill:true});
-        let box = new St.BoxLayout({vertical: true});
-        scroll.height = 1000;
-        scroll.add_actor(box);
-        this.box.add(scroll);*/
-
-/*        this._scrollView = new St.ScrollView({ name: 'dashtodockDashScrollview',
-                                               hscrollbar_policy: Gtk.PolicyType.NEVER,
-                                               vscrollbar_policy: Gtk.PolicyType.NEVER,
-                                               enable_mouse_scrolling: false });*/
-
         // Display the app windows menu items and the separator between windows
         // of the current desktop and other windows.
-        let activeWorkspace = global.screen.get_active_workspace();
-        let separatorShown = windows.length > 0 && windows[0].get_workspace() != activeWorkspace;
+        if (windows.length > 0) {
 
-        for (let i = 0; i < windows.length; i++) {
-            let window = windows[i];
-            if (!separatorShown && window.get_workspace() != activeWorkspace) {
-                this._appendSeparator();
-                separatorShown = true;
+            let submenuItem;
+            if (show_window_preview) {
+                submenuItem = new PopupMenu.PopupSubMenuMenuItem(_('All Windows'), false);
+                this.addMenuItem(submenuItem);
             }
-            //let item = this._appendMenuItem(window.title);
-            let item = new WindowPreviewMenuItem(window);
-            //this.addMenuItem(item);
-            //box.add(item.actor);
-            submenuItem.menu.addMenuItem(item);
-            item.connect('activate', Lang.bind(this, function() {
-                this.emit('activate-window', window);
-            }));
-            // HACK1 try to pre-size the menu
-            submenuItem.actor.width = item.actor.width;
+
+            let activeWorkspace = global.screen.get_active_workspace();
+            let separatorShown =  windows[0].get_workspace() != activeWorkspace;
+
+            for (let i = 0; i < windows.length; i++) {
+                let window = windows[i];
+                if (!separatorShown && window.get_workspace() != activeWorkspace) {
+                    if (show_window_preview)
+                        submenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+                    else
+                        this._appendSeparator();
+                    separatorShown = true;
+                }
+
+                let item;
+                if (show_window_preview) {
+                    item = new WindowPreviewMenuItem(window);
+                    submenuItem.menu.addMenuItem(item);
+                } else {
+                    item = this._appendMenuItem(window.title);
+                }
+                item.connect('activate', Lang.bind(this, function() {
+                    this.emit('activate-window', window);
+                }));
+            }
+
+            // Try to set the size to that of the submenu.
+            // TODO: can't get the actual size, getting a bit less.
+            // Temporary workaround: add 15px to compensate
+            if (show_window_preview)
+                submenuItem.actor.width =  submenuItem.menu.actor.width + 15;
         }
 
-            //submenuItem.menu._needsScrollbar = function(){return false};
-          //submenuItem.menu.open()
+        //submenuItem.menu._needsScrollbar = function(){return false};
+        //submenuItem.menu.open()
 
         if (!this._source.app.is_window_backed()) {
             this._appendSeparator();
@@ -215,7 +222,7 @@ const myAppIconMenu = new Lang.Class({
         }
     }
 });
-
+Signals.addSignalMethods(myAppIconMenu.prototype);
 
 const WindowPreviewMenuItem = new Lang.Class({
     Name: 'WindowPreviewMenuItem',
@@ -231,35 +238,31 @@ const WindowPreviewMenuItem = new Lang.Class({
         let windowTexture = mutterWindow.get_texture();
         let [width, height] = windowTexture.get_size();
 
-        const size = 250;
-        let scale = Math.min(1.0, size / width);
+        const maxwidth = 250;
+        const maxheight = 150;
+        let scale = Math.min(1.0, maxwidth/width, maxheight / height);
 
         let clone = new Clutter.Clone ({ source: windowTexture,
                                          reactive: true,
                                          width: width * scale,
                                          height: height * scale });
-        let title =  window.get_title();
 
-        const MAX = 50;
-        if (title.length > MAX ) {
-            title = title.substr(0,MAX-3);
-            title = title + '...';
-        }
+        let cloneBin = new St.Bin({ child:clone });
+        cloneBin.set_size(maxwidth, maxheight);
 
-        let label = new St.Label({ text: title});
+        let label = new St.Label({ text: window.get_title()});
+        label.width = maxwidth;
         let labelBin = new St.Bin({ child: label,
-        //                            x_align: St.Align.MIDDLE });
-                                      x_align: St.Align.START});
+                                    x_align: St.Align.MIDDLE});
 
         let box = new St.BoxLayout({ vertical: true });
-        //box.add(clone, { x_fill: false });
-        box.add(clone, { x_fill: false, x_align: St.Align.START });
+        box.set_x_expand(true);
+        box.add(cloneBin);
         box.add(labelBin);
-        //this.addActor(box, { expand: true });
-        this.actor.add_actor(box, { expand: false});
+
+        this.actor.add_actor(box);
     }
 });
-Signals.addSignalMethods(myAppIconMenu.prototype);
 
 /**
  * Extend DashItemContainer
@@ -1594,14 +1597,14 @@ const myAppIcon = new Lang.Class({
             }));
             this._menu.connect('open-state-changed', Lang.bind(this, function (menu, isPoppedUp) {
 
-                global.log('+****************************++++');
                 // Setting the max-height won't do any good if the minimum height of the
                 // menu is higher then the screen; it's useful if part of the menu is
                 // scrollable so the minimum height is smaller than the natural height
                 let workArea = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
                 let verticalMargins = this._menu.actor.margin_top + this._menu.actor.margin_bottom;
+                // TODO: take into account dash position
                 this._menu.actor.style = ('max-height: ' + Math.round(workArea.height - verticalMargins) + 'px;');
-                //this._menu.actor.style = ('max-height: 200px');
+
 
                 if (!isPoppedUp)
                     this._onMenuPoppedDown();
