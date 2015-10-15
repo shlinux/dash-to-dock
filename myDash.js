@@ -253,6 +253,7 @@ const WindowPreviewMenuItem = new Lang.Class({
         let label = new St.Label({ text: window.get_title()});
         label.width = maxwidth;
         let labelBin = new St.Bin({ child: label,
+                                    x_expand:true,
                                     x_align: St.Align.MIDDLE});
 
         let box = new St.BoxLayout({ vertical: true });
