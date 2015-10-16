@@ -269,11 +269,9 @@ const WindowPreviewMenuItem = new Lang.Class({
         this.closeButton.set_y_expand(true);
 
         let label = new St.Label({ text: window.get_title()});
-        label.width = maxwidth;
+        label.set_style('max-width:'+maxwidth+'px');
         let labelBin = new St.Bin({ child: label,
-                                    x_expand:true,
                                     x_align: St.Align.MIDDLE});
-
         let box = new St.BoxLayout({ vertical: true, reactive:true});
         box.set_x_expand(true);
         //box.add(cloneBin);
