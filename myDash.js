@@ -229,7 +229,7 @@ const WindowPreviewMenuItem = new Lang.Class({
     Extends: PopupMenu.PopupBaseMenuItem,
 
     _init: function(window, params) {
-        this.window = window;
+        this._window = window;
         params = Params.parse(params, { style_class: 'app-well-preview-menu-item' });
 
         this.parent(params);
@@ -247,8 +247,26 @@ const WindowPreviewMenuItem = new Lang.Class({
                                          width: width * scale,
                                          height: height * scale });
 
+        this._clone = clone;
+
         let cloneBin = new St.Bin({ child:clone });
         cloneBin.set_size(maxwidth, maxheight);
+        // TODO: improve the way I reserve space for the close button
+        cloneBin.set_style('padding: 10px');
+
+        this.closeButton = new St.Button({ style_class: 'window-close' });
+        this.closeButton.opacity = 0;
+        this.closeButton.connect('clicked', Lang.bind(this, this._closeWindow));
+
+        let overlayGroup = new Clutter.Actor({layout_manager: new Clutter.BinLayout() });
+        //let overlayGroup = new Clutter.Actor({});
+        overlayGroup.add_actor(cloneBin);
+        //overlayGroup.add_actor(this.border);
+        overlayGroup.add_actor(this.closeButton);
+        this.closeButton.set_x_align(Clutter.ActorAlign.END);
+        this.closeButton.set_x_expand(true);
+        this.closeButton.set_y_align(Clutter.ActorAlign.START);
+        this.closeButton.set_y_expand(true);
 
         let label = new St.Label({ text: window.get_title()});
         label.width = maxwidth;
@@ -256,13 +274,135 @@ const WindowPreviewMenuItem = new Lang.Class({
                                     x_expand:true,
                                     x_align: St.Align.MIDDLE});
 
-        let box = new St.BoxLayout({ vertical: true });
+        let box = new St.BoxLayout({ vertical: true, reactive:true});
         box.set_x_expand(true);
-        box.add(cloneBin);
+        //box.add(cloneBin);
+        box.add(overlayGroup);
         box.add(labelBin);
 
         this.actor.add_actor(box);
+
+        this.actor.connect('destroy', Lang.bind(this, this._onDestroy));
+        this.actor.connect('enter-event',
+                                  Lang.bind(this, this._onEnter));
+        this.actor.connect('leave-event',
+                                  Lang.bind(this, this._onLeave));
+        this.actor.connect('key-focus-in',
+                                  Lang.bind(this, this._onEnter));
+        this.actor.connect('key-focus-out',
+                                  Lang.bind(this, this._onLeave));
+
+    },
+
+    _windowCanClose: function() {
+        return this._window.can_close() &&
+               !this._hasAttachedDialogs();
+    },
+
+    _closeWindow: function(actor) {
+        this._workspace = this._window.get_workspace();
+
+        this.deleteAllWindows();
+        this._animateOut();
+    },
+
+    deleteAllWindows: function() {
+        // Delete all windows, starting from the bottom-most (most-modal) one
+        //let windows = this._window.get_compositor_private().get_children();
+        let windows = this._clone.get_children();
+        for (let i = windows.length - 1; i >= 1; i--) {
+            let realWindow = windows[i].source;
+            let metaWindow = realWindow.meta_window;
+
+            metaWindow.delete(global.get_current_time());
+        }
+
+        this._window.delete(global.get_current_time());
+    },
+
+    _hasAttachedDialogs: function() {
+        return this._window.get_compositor_private().get_n_children() > 1;
+    },
+
+    _showCloseButton: function() {
+
+        if (this._windowCanClose()) {
+            this.closeButton.show();
+            Tweener.addTween(this.closeButton,
+                             { opacity: 255,
+                               time: Workspace.CLOSE_BUTTON_FADE_TIME,
+                               transition: 'easeOutQuad' });
+        }
+    },
+
+    _hideCloseButton: function() {
+        Tweener.addTween(this.closeButton,
+                         { opacity: 0,
+                           time: Workspace.CLOSE_BUTTON_FADE_TIME,
+                           transition: 'easeInQuad' });
+    },
+
+    _onEnter: function() { global.log('ENTER');
+        this._showCloseButton();
+        return Clutter.EVENT_PROPAGATE;
+    },
+
+    _onLeave: function() { global.log('LEAVE');
+        global.log([this._clone.has_pointer, this.closeButton.has_pointer]);
+        if (!this._clone.has_pointer &&
+            !this.closeButton.has_pointer)
+            this._hideCloseButton();
+
+        return Clutter.EVENT_PROPAGATE;
+    },
+
+    _idleToggleCloseButton: function() {
+        this._idleToggleCloseId = 0;
+
+        if (!this._clone.has_pointer &&
+            !this.closeButton.has_pointer)
+            this._hideCloseButton();
+
+        return GLib.SOURCE_REMOVE;
+    },
+
+    _animateOut: function() {
+        Tweener.addTween(this.actor,
+                         { opacity: 0,
+                           time: 0.25,
+                           onCompleteScope: this,
+                           onComplete: function() {
+                              //this.actor.destroy();
+                           }
+                         });
+
+        Tweener.addTween(this.actor,
+                         { height: 0,
+                           time: 0.25,
+                           delay: 0.25,
+                           onCompleteScope: this,
+                           onComplete: function() {
+                              this.actor.destroy();
+                           }
+                         });
+    },
+
+    _onDestroy: function() { global.log('DESTROY'); /*
+        if (this._windowAddedId > 0) {
+            this._workspace.disconnect(this._windowAddedId);
+            this._windowAddedId = 0;
+        }
+        if (this._idleToggleCloseId > 0) {
+            Mainloop.source_remove(this._idleToggleCloseId);
+            this._idleToggleCloseId = 0;
+        }
+        this._windowClone.metaWindow.disconnect(this._updateCaptionId);
+        this.title.destroy();
+        this.closeButton.destroy();
+        this.border.destroy();*/
     }
+
+
 });
 
 /**
