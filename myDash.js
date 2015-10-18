@@ -244,7 +244,17 @@ const WindowPreviewMenuItem = new Lang.Class({
                                          width: width * scale,
                                          height: height * scale });
 
+        // when the source actor is destroyed, i.e. the window closed, first destroy the clone
+        // and then destroy the menu item (do this animating out)
+        //this._destroyId = mutterWindow.connect('destroy', Lang.bind(this, this._onDestroy));
+        this._destroyId = mutterWindow.connect('destroy', Lang.bind(this, function() {
+            clone.destroy();
+            this._destroyId = 0; // avoid to try to disconnect a signal of an object which was destroyed in _onDestroy()
+            this._animateOutAndDestroy();
+        }));
+
         this._clone = clone;
+        this._mutterWindow = mutterWindow;
         this._windowAddedId = 0;
 
         let cloneBin = new St.Bin({ child:clone });
@@ -307,7 +317,6 @@ const WindowPreviewMenuItem = new Lang.Class({
                                                                 this._onWindowAdded));
 
         this.deleteAllWindows();
-        this._animateOut();
     },
 
     deleteAllWindows: function() {
@@ -343,7 +352,8 @@ const WindowPreviewMenuItem = new Lang.Class({
     },
 
     _hasAttachedDialogs: function() {
-        return this._window.get_compositor_private().get_n_children() > 1;
+        // this is wrong!!!!!
+        return this._mutterWindow.get_n_children() > 1;
     },
 
     _showCloseButton: function() {
@@ -388,7 +398,7 @@ const WindowPreviewMenuItem = new Lang.Class({
         return GLib.SOURCE_REMOVE;
     },
 
-    _animateOut: function() {
+    _animateOutAndDestroy: function() {
         Tweener.addTween(this.actor,
                          { opacity: 0,
                            time: 0.25,
@@ -409,13 +419,15 @@ const WindowPreviewMenuItem = new Lang.Class({
                          });
     },
 
-    _onDestroy: function() { global.log('DESTROY');
+    _onDestroy: function() {
         if (this._windowAddedId > 0) {
             this._workspace.disconnect(this._windowAddedId);
             this._windowAddedId = 0;
         }
+        if (this._destroyId > 0)
+            this._mutterWindow.disconnect(this._destroyId);
+            this._destroyId = 0;
     }
-
 
 });
 
