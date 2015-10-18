@@ -245,6 +245,7 @@ const WindowPreviewMenuItem = new Lang.Class({
                                          height: height * scale });
 
         this._clone = clone;
+        this._windowAddedId = 0;
 
         let cloneBin = new St.Bin({ child:clone });
         cloneBin.set_size(maxwidth, maxheight);
@@ -297,6 +298,14 @@ const WindowPreviewMenuItem = new Lang.Class({
     _closeWindow: function(actor) {
         this._workspace = this._window.get_workspace();
 
+        // This mechanism is copied from the workspace.js upstream code
+        // It forces window activation if the windows don't get closed,
+        // for instance because asking user confirmation, by monitoring the opening of
+        // such additional confirmation window
+        this._windowAddedId = this._workspace.connect('window-added',
+                                                      Lang.bind(this,
+                                                                this._onWindowAdded));
+
         this.deleteAllWindows();
         this._animateOut();
     },
@@ -313,6 +322,24 @@ const WindowPreviewMenuItem = new Lang.Class({
         }
 
         this._window.delete(global.get_current_time());
+    },
+
+    _onWindowAdded: function(workspace, win) {
+        let metaWindow = this._window;
+
+        if (win.get_transient_for() == metaWindow) {
+            workspace.disconnect(this._windowAddedId);
+            this._windowAddedId = 0;
+
+            // use an idle handler to avoid mapping problems -
+            // see comment in Workspace._windowAdded
+            let id = Mainloop.idle_add(Lang.bind(this,
+                                            function() {
+                                                this.emit('activate');
+                                                return GLib.SOURCE_REMOVE;
+                                            }));
+            GLib.Source.set_name_by_id(id, '[dash-to-dock] this.emit');
+        }
     },
 
     _hasAttachedDialogs: function() {
@@ -382,19 +409,11 @@ const WindowPreviewMenuItem = new Lang.Class({
                          });
     },
 
-    _onDestroy: function() { global.log('DESTROY'); /*
+    _onDestroy: function() { global.log('DESTROY');
         if (this._windowAddedId > 0) {
             this._workspace.disconnect(this._windowAddedId);
             this._windowAddedId = 0;
         }
-        if (this._idleToggleCloseId > 0) {
-            Mainloop.source_remove(this._idleToggleCloseId);
-            this._idleToggleCloseId = 0;
-        }
-        this._windowClone.metaWindow.disconnect(this._updateCaptionId);
-        this.title.destroy();
-        this.closeButton.destroy();
-        this.border.destroy();*/
     }
 
 
