@@ -1595,17 +1595,21 @@ const myAppIcon = new Lang.Class({
             }));
             this._menu.connect('open-state-changed', Lang.bind(this, function (menu, isPoppedUp) {
 
-                // Setting the max-height won't do any good if the minimum height of the
-                // menu is higher then the screen; it's useful if part of the menu is
-                // scrollable so the minimum height is smaller than the natural height
-                let workArea = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
-                let verticalMargins = this._menu.actor.margin_top + this._menu.actor.margin_bottom;
-                // TODO: take into account dash position
-                this._menu.actor.style = ('max-height: ' + Math.round(workArea.height - verticalMargins) + 'px;');
-
-
                 if (!isPoppedUp)
                     this._onMenuPoppedDown();
+                else {
+                  // Setting the max-height is s useful if part of the menu is
+                  // scrollable so the minimum height is smaller than the natural height.
+                  let monitor_index = Main.layoutManager.findIndexForActor(this.actor);
+                  let workArea = Main.layoutManager.getWorkAreaForMonitor(monitor_index);
+                  let position = getPosition(this._settings);
+                  this._isHorizontal = ( position == St.Side.TOP ||
+                                         position == St.Side.BOTTOM);
+                  // If horizontal also remove the height of the dash
+                  let additional_margin = this._isHorizontal && !this._settings.get_boolean('dock-fixed') ? Main.overview._dash.actor.height : 0;
+                  let verticalMargins = this._menu.actor.margin_top + this._menu.actor.margin_bottom;
+                  this._menu.actor.style = ('max-height: ' + Math.round(workArea.height - additional_margin - verticalMargins) + 'px;');
+                }
             }));
             let id = Main.overview.connect('hiding', Lang.bind(this, function () { this._menu.close(); }));
             this._menu.actor.connect('destroy', function() {
