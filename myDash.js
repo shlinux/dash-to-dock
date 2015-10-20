@@ -355,8 +355,11 @@ const WindowPreviewMenuItem = new Lang.Class({
     },
 
     _hasAttachedDialogs: function() {
-        // this is wrong!!!!!
-        return this._mutterWindow.get_n_children() > 1;
+        // count trasient windows
+        let n=0;
+        function count(){n = n+1;}
+        this._window.foreach_transient(count);
+        return n>0;
     },
 
     _showCloseButton: function() {
