@@ -221,6 +221,8 @@ const myAppIconMenu = new Lang.Class({
 });
 Signals.addSignalMethods(myAppIconMenu.prototype);
 
+const PREVIEW_MAX_WIDTH = 250;
+const PREVIEW_MAX_HEIGHT = 150;
 const WindowPreviewMenuItem = new Lang.Class({
     Name: 'WindowPreviewMenuItem',
     Extends: PopupMenu.PopupBaseMenuItem,
@@ -231,36 +233,12 @@ const WindowPreviewMenuItem = new Lang.Class({
 
         this.parent(params);
 
-        let mutterWindow = window.get_compositor_private();
-        let windowTexture = mutterWindow.get_texture();
-        let [width, height] = windowTexture.get_size();
-
-        const maxwidth = 250;
-        const maxheight = 150;
-        let scale = Math.min(1.0, maxwidth/width, maxheight / height);
-
-        let clone = new Clutter.Clone ({ source: windowTexture,
-                                         reactive: true,
-                                         width: width * scale,
-                                         height: height * scale });
-
-        // when the source actor is destroyed, i.e. the window closed, first destroy the clone
-        // and then destroy the menu item (do this animating out)
-        //this._destroyId = mutterWindow.connect('destroy', Lang.bind(this, this._onDestroy));
-        this._destroyId = mutterWindow.connect('destroy', Lang.bind(this, function() {
-            clone.destroy();
-            this._destroyId = 0; // avoid to try to disconnect a signal of an object which was destroyed in _onDestroy()
-            this._animateOutAndDestroy();
-        }));
-
-        this._clone = clone;
-        this._mutterWindow = mutterWindow;
         this._windowAddedId = 0;
 
-        let cloneBin = new St.Bin({ child:clone });
-        cloneBin.set_size(maxwidth, maxheight);
+        this._cloneBin = new St.Bin();
+        this._cloneBin.set_size(PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT);
         // TODO: improve the way I reserve space for the close button
-        cloneBin.set_style('padding: 10px');
+        this._cloneBin.set_style('padding: 10px');
 
         this.closeButton = new St.Button({ style_class: 'window-close' });
         this.closeButton.opacity = 0;
@@ -268,7 +246,7 @@ const WindowPreviewMenuItem = new Lang.Class({
 
         let overlayGroup = new Clutter.Actor({layout_manager: new Clutter.BinLayout() });
         //let overlayGroup = new Clutter.Actor({});
-        overlayGroup.add_actor(cloneBin);
+        overlayGroup.add_actor(this._cloneBin);
         //overlayGroup.add_actor(this.border);
         overlayGroup.add_actor(this.closeButton);
         this.closeButton.set_x_align(Clutter.ActorAlign.END);
@@ -277,7 +255,7 @@ const WindowPreviewMenuItem = new Lang.Class({
         this.closeButton.set_y_expand(true);
 
         let label = new St.Label({ text: window.get_title()});
-        label.set_style('max-width:'+maxwidth+'px');
+        label.set_style('max-width: '+PREVIEW_MAX_WIDTH +'px');
         let labelBin = new St.Bin({ child: label,
                                     x_align: St.Align.MIDDLE});
         let box = new St.BoxLayout({ vertical: true, reactive:true});
@@ -297,6 +275,51 @@ const WindowPreviewMenuItem = new Lang.Class({
                                   Lang.bind(this, this._onEnter));
         this.actor.connect('key-focus-out',
                                   Lang.bind(this, this._onLeave));
+
+        this._cloneTexture(window);
+
+    },
+
+    _cloneTexture: function(metaWin){
+
+        let mutterWindow = metaWin.get_compositor_private();
+        if (!mutterWindow) {
+            // Newly-created windows are added to a workspace before
+            // the compositor finds out about them...
+            let id = Mainloop.idle_add(Lang.bind(this,
+                                            function () {
+                                                if (metaWin.get_compositor_private())
+                                                    this._cloneTexture(metaWin);
+                                                return GLib.SOURCE_REMOVE;
+                                            }));
+            GLib.Source.set_name_by_id(id, '[dash-to-dock] this._cloneTexture');
+            return;
+        }
+
+        let windowTexture = mutterWindow.get_texture();
+        let [width, height] = windowTexture.get_size();
+
+        let scale = Math.min(1.0, PREVIEW_MAX_WIDTH/width, PREVIEW_MAX_HEIGHT/height);
+
+        let clone = new Clutter.Clone ({ source: windowTexture,
+                                         reactive: true,
+                                         width: width * scale,
+                                         height: height * scale });
+
+        // when the source actor is destroyed, i.e. the window closed, first destroy the clone
+        // and then destroy the menu item (do this animating out)
+        //this._destroyId = mutterWindow.connect('destroy', Lang.bind(this, this._onDestroy));
+        this._destroyId = mutterWindow.connect('destroy', Lang.bind(this, function() {
+            clone.destroy();
+            this._destroyId = 0; // avoid to try to disconnect a signal of an object which was destroyed in _onDestroy()
+            this._animateOutAndDestroy();
+        }));
+
+        this._clone = clone;
+        this._mutterWindow = mutterWindow;
+        this._cloneBin.set_child(this._clone);
+
+        global.log('cloned');
 
     },
 
@@ -384,7 +407,7 @@ const WindowPreviewMenuItem = new Lang.Class({
 
     _onLeave: function() { global.log('LEAVE');
         global.log([this._clone.has_pointer, this.closeButton.has_pointer]);
-        if (!this._clone.has_pointer &&
+        if (!this._cloneBin.has_pointer &&
             !this.closeButton.has_pointer)
             this._hideCloseButton();
 
@@ -394,7 +417,7 @@ const WindowPreviewMenuItem = new Lang.Class({
     _idleToggleCloseButton: function() {
         this._idleToggleCloseId = 0;
 
-        if (!this._clone.has_pointer &&
+        if (!this._cloneBin.has_pointer &&
             !this.closeButton.has_pointer)
             this._hideCloseButton();
 
