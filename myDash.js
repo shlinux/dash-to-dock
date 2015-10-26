@@ -520,6 +520,7 @@ const WindowPreviewMenuItem = new Lang.Class({
         if (this._destroyId > 0)
             this._mutterWindow.disconnect(this._destroyId);
             this._destroyId = 0;
+        this.emit('destroy');
     }
 
 });
