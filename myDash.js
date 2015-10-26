@@ -92,25 +92,7 @@ const myAppIconMenu = new Lang.Class({
             this._allWindowsMenuItem = new PopupMenu.PopupSubMenuMenuItem(_('All Windows'), false);
             this.addMenuItem(this._allWindowsMenuItem);
 
-            if (windows.length > 0) {
-
-                let activeWorkspace = global.screen.get_active_workspace();
-                let separatorShown =  windows[0].get_workspace() != activeWorkspace;
-
-                for (let i = 0; i < windows.length; i++) {
-                    let window = windows[i];
-                    if (!separatorShown && window.get_workspace() != activeWorkspace) {
-                        this._allWindowsMenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-                        separatorShown = true;
-                    }
-
-                    let item = new WindowPreviewMenuItem(window);
-                    this._allWindowsMenuItem.menu.addMenuItem(item);
-                    item.connect('activate', Lang.bind(this, function() {
-                        this.emit('activate-window', window);
-                    }));
-                }
-            }
+            this._populateAllWindowMenu(windows);
 
             if (windows.length == 0)
                 this._allWindowsMenuItem.actor.hide();
@@ -218,6 +200,40 @@ const myAppIconMenu = new Lang.Class({
 
     },
 
+    _populateAllWindowMenu: function(windows) {
+
+        this._allWindowsMenuItem.menu.removeAll();
+
+        if (windows.length > 0) {
+
+            let activeWorkspace = global.screen.get_active_workspace();
+            let separatorShown =  windows[0].get_workspace() != activeWorkspace;
+
+            for (let i = 0; i < windows.length; i++) {
+                let window = windows[i];
+                if (!separatorShown && window.get_workspace() != activeWorkspace) {
+                    this._allWindowsMenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+                    separatorShown = true;
+                }
+
+                let item = new WindowPreviewMenuItem(window);
+                this._allWindowsMenuItem.menu.addMenuItem(item);
+                item.connect('activate', Lang.bind(this, function() {
+                    this.emit('activate-window', window);
+                }));
+
+                item.connect('destroy', Lang.bind(this, function() {
+                    //this._allWindowsMenuItem.actor.hide();
+                    //this._allWindowsMenuItem.setSensitive(false);
+                    global.log(['****** destroy **********', this._allWindowsMenuItem.menu._getMenuItems().length]);
+                    if(this._allWindowsMenuItem.menu._getMenuItems().length == 1) // It's still counting the item just going to be destroyed
+                        this._allWindowsMenuItem.setSensitive(false);// this._allWindowsMenuItem.actor.hide();
+                }));
+            }
+        }
+
+    },
+
     update: function(){
 
       if(SHOW_WINDOWS_PREVIEW){
@@ -249,7 +265,7 @@ const myAppIconMenu = new Lang.Class({
               return !w.skip_taskbar;
           });
 
-          // Removals are already handed connecting to the destroy signal of the metaWindowActor. 
+          // Removals are already handled connecting to the destroy signal of the metaWindowActor. 
           // Regenerate the menu only when windows are added
 
           let old_windows = this._allWindowsMenuItem.menu._getMenuItems().map(function(item){
@@ -257,34 +273,12 @@ const myAppIconMenu = new Lang.Class({
                   return item._window;
           })
 
-          new_windows = windows.filter(function(w) {return old_windows.indexOf(w) < 0;});
+          let new_windows = windows.filter(function(w) {return old_windows.indexOf(w) < 0;});
           if (new_windows.length > 0) {
-
-              this._allWindowsMenuItem.menu.removeAll();
-
-              if (windows.length > 0) {
-
-                  let activeWorkspace = global.screen.get_active_workspace();
-                  let separatorShown =  windows[0].get_workspace() != activeWorkspace;
-
-                  for (let i = 0; i < windows.length; i++) {
-                      let window = windows[i];
-                      if (!separatorShown && window.get_workspace() != activeWorkspace) {
-                          this._allWindowsMenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-                          separatorShown = true;
-                      }
-
-                      let item = new WindowPreviewMenuItem(window);
-                      this._allWindowsMenuItem.menu.addMenuItem(item);
-                      item.connect('activate', Lang.bind(this, function() {
-                          this.emit('activate-window', window);
-                      }));
-                  }
-                  this._allWindowsMenuItem.actor.show();
-              } else {
-                  this._allWindowsMenuItem.actor.hide();
+              this._populateAllWindowMenu(windows);
+              this._allWindowsMenuItem.actor.show();
+              this._allWindowsMenuItem.setSensitive(true);
               }
-          }
 
           this._getMenuItems().forEach(Lang.bind(this, this._updateSeparatorVisibility));
       }
