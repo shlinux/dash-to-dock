@@ -52,6 +52,7 @@ function getPosition(settings) {
  * - Add open windows thumbnails instead of list
  */
 
+const SHOW_WINDOWS_PREVIEW = true;
 const myAppIconMenu = new Lang.Class({
     Name: 'myAppIconMenu',
     Extends: AppDisplay.AppIconMenu,
@@ -79,144 +80,215 @@ const myAppIconMenu = new Lang.Class({
     _redisplay: function() {
         this.removeAll();
 
-        const show_window_preview = true;
-
         let windows = this._source.app.get_windows().filter(function(w) {
             return !w.skip_taskbar;
         });
 
         // Display the app windows menu items and the separator between windows
         // of the current desktop and other windows.
-        if (windows.length > 0) {
 
-            let submenuItem;
-            if (show_window_preview) {
-                submenuItem = new PopupMenu.PopupSubMenuMenuItem(_('All Windows'), false);
-                this.addMenuItem(submenuItem);
+        if (SHOW_WINDOWS_PREVIEW) {
+
+            this._allWindowsMenuItem = new PopupMenu.PopupSubMenuMenuItem(_('All Windows'), false);
+            this.addMenuItem(this._allWindowsMenuItem);
+
+            if (windows.length > 0) {
+
+                let activeWorkspace = global.screen.get_active_workspace();
+                let separatorShown =  windows[0].get_workspace() != activeWorkspace;
+
+                for (let i = 0; i < windows.length; i++) {
+                    let window = windows[i];
+                    if (!separatorShown && window.get_workspace() != activeWorkspace) {
+                        this._allWindowsMenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+                        separatorShown = true;
+                    }
+
+                    let item = new WindowPreviewMenuItem(window);
+                    this._allWindowsMenuItem.menu.addMenuItem(item);
+                    item.connect('activate', Lang.bind(this, function() {
+                        this.emit('activate-window', window);
+                    }));
+                }
             }
 
-            let activeWorkspace = global.screen.get_active_workspace();
-            let separatorShown =  windows[0].get_workspace() != activeWorkspace;
-
-            for (let i = 0; i < windows.length; i++) {
-                let window = windows[i];
-                if (!separatorShown && window.get_workspace() != activeWorkspace) {
-                    if (show_window_preview)
-                        submenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-                    else
-                        this._appendSeparator();
-                    separatorShown = true;
-                }
-
-                let item;
-                if (show_window_preview) {
-                    item = new WindowPreviewMenuItem(window);
-                    submenuItem.menu.addMenuItem(item);
-                } else {
-                    item = this._appendMenuItem(window.title);
-                }
-                item.connect('activate', Lang.bind(this, function() {
-                    this.emit('activate-window', window);
-                }));
-            }
+            if (windows.length == 0)
+                this._allWindowsMenuItem.actor.hide();
 
             // Try to set the size to that of the submenu.
             // TODO: can't get the actual size, getting a bit less.
             // Temporary workaround: add 15px to compensate
-            if (show_window_preview)
-                submenuItem.actor.width =  submenuItem.menu.actor.width + 15;
-        }
+            this._allWindowsMenuItem.actor.width =  this._allWindowsMenuItem.menu.actor.width + 15;
 
-        if (!this._source.app.is_window_backed()) {
-            this._appendSeparator();
-
-            let appInfo = this._source.app.get_app_info();
-            let actions = appInfo.list_actions();
-            if (this._source.app.can_open_new_window() &&
-                actions.indexOf('new-window') == -1) {
-                this._newWindowMenuItem = this._appendMenuItem(_("New Window"));
-                this._newWindowMenuItem.connect('activate', Lang.bind(this, function() {
-                    if (this._source.app.state == Shell.AppState.STOPPED)
-                        this._source.animateLaunch();
-
-                    this._source.app.open_new_window(-1);
-                    this.emit('activate-window', null);
-                }));
-                this._appendSeparator();
-            }
-
-            for (let i = 0; i < actions.length; i++) {
-                let action = actions[i];
-                let item = this._appendMenuItem(appInfo.get_action_name(action));
-                item.connect('activate', Lang.bind(this, function(emitter, event) {
-                    this._source.app.launch_action(action, event.get_time(), -1);
-                    this.emit('activate-window', null);
-                }));
-            }
-
-            let canFavorite = global.settings.is_writable('favorite-apps');
-
-            if (canFavorite) {
+            if (!this._source.app.is_window_backed()) {
                 this._appendSeparator();
 
-                let isFavorite = AppFavorites.getAppFavorites().isFavorite(this._source.app.get_id());
+                let appInfo = this._source.app.get_app_info();
+                let actions = appInfo.list_actions();
+                if (this._source.app.can_open_new_window() &&
+                    actions.indexOf('new-window') == -1) {
+                    this._newWindowMenuItem = this._appendMenuItem(_("New Window"));
+                    this._newWindowMenuItem.connect('activate', Lang.bind(this, function() {
+                        if (this._source.app.state == Shell.AppState.STOPPED)
+                            this._source.animateLaunch();
 
-                if (isFavorite) {
-                    let item = this._appendMenuItem(_("Remove from Favorites"));
-                    item.connect('activate', Lang.bind(this, function() {
-                        let favs = AppFavorites.getAppFavorites();
-                        favs.removeFavorite(this._source.app.get_id());
+                        this._source.app.open_new_window(-1);
+                        this.emit('activate-window', null);
                     }));
-                } else {
-                    let item = this._appendMenuItem(_("Add to Favorites"));
+                    this._appendSeparator();
+                }
+
+                for (let i = 0; i < actions.length; i++) {
+                    let action = actions[i];
+                    let item = this._appendMenuItem(appInfo.get_action_name(action));
+                    item.connect('activate', Lang.bind(this, function(emitter, event) {
+                        this._source.app.launch_action(action, event.get_time(), -1);
+                        this.emit('activate-window', null);
+                    }));
+                }
+
+                let canFavorite = global.settings.is_writable('favorite-apps');
+
+                if (canFavorite) {
+                    this._appendSeparator();
+
+                    let isFavorite = AppFavorites.getAppFavorites().isFavorite(this._source.app.get_id());
+
+                    if (isFavorite) {
+                        let item = this._appendMenuItem(_("Remove from Favorites"));
+                        item.connect('activate', Lang.bind(this, function() {
+                            let favs = AppFavorites.getAppFavorites();
+                            favs.removeFavorite(this._source.app.get_id());
+                        }));
+                    } else {
+                        let item = this._appendMenuItem(_("Add to Favorites"));
+                        item.connect('activate', Lang.bind(this, function() {
+                            let favs = AppFavorites.getAppFavorites();
+                            favs.addFavorite(this._source.app.get_id());
+                        }));
+                    }
+                }
+
+                if (Shell.AppSystem.get_default().lookup_app('org.gnome.Software.desktop')) {
+                    this._appendSeparator();
+                    let item = this._appendMenuItem(_("Show Details"));
                     item.connect('activate', Lang.bind(this, function() {
-                        let favs = AppFavorites.getAppFavorites();
-                        favs.addFavorite(this._source.app.get_id());
+                        let id = this._source.app.get_id();
+                        let args = GLib.Variant.new('(ss)', [id, '']);
+                        Gio.DBus.get(Gio.BusType.SESSION, null,
+                            function(o, res) {
+                                let bus = Gio.DBus.get_finish(res);
+                                bus.call('org.gnome.Software',
+                                         '/org/gnome/Software',
+                                         'org.gtk.Actions', 'Activate',
+                                         GLib.Variant.new('(sava{sv})',
+                                                          ['details', [args], null]),
+                                         null, 0, -1, null, null);
+                                Main.overview.hide();
+                            });
                     }));
                 }
             }
 
-            if (Shell.AppSystem.get_default().lookup_app('org.gnome.Software.desktop')) {
-                this._appendSeparator();
-                let item = this._appendMenuItem(_("Show Details"));
-                item.connect('activate', Lang.bind(this, function() {
-                    let id = this._source.app.get_id();
-                    let args = GLib.Variant.new('(ss)', [id, '']);
-                    Gio.DBus.get(Gio.BusType.SESSION, null,
-                        function(o, res) {
-                            let bus = Gio.DBus.get_finish(res);
-                            bus.call('org.gnome.Software',
-                                     '/org/gnome/Software',
-                                     'org.gtk.Actions', 'Activate',
-                                     GLib.Variant.new('(sava{sv})',
-                                                      ['details', [args], null]),
-                                     null, 0, -1, null, null);
-                            Main.overview.hide();
-                        });
-                }));
-            }
+        } else {
+            this.parent();
         }
 
-        // quit menu
+        // Add quit menu
         let app = this._source.app;
         let count = getAppInterestingWindows(app).length;
-        if ( count > 0) {
-            this._appendSeparator();
-            let quitFromDashMenuText = "";
-            if (count == 1)
-                quitFromDashMenuText = _("Quit");
-            else
-                quitFromDashMenuText = _("Quit " + count + " Windows");
+        this._appendSeparator();
+        let quitFromDashMenuText = "";
+        if (count == 1)
+            quitFromDashMenuText = _("Quit");
+        else
+            quitFromDashMenuText = _("Quit " + count + " Windows");
 
-            this._quitfromDashMenuItem = this._appendMenuItem(quitFromDashMenuText);
-            this._quitfromDashMenuItem.connect('activate', Lang.bind(this, function() {
-                let app = this._source.app;
-                let windows = app.get_windows();
-                for (let i = 0; i < windows.length; i++) {
-                    this._closeWindowInstance(windows[i])
-                }
-            }));
-        }
+        this._quitfromDashMenuItem = this._appendMenuItem(quitFromDashMenuText);
+        this._quitfromDashMenuItem.connect('activate', Lang.bind(this, function() {
+            let app = this._source.app;
+            let windows = app.get_windows();
+            for (let i = 0; i < windows.length; i++) {
+                this._closeWindowInstance(windows[i])
+            }
+        }));
+
+        if ( count == 0)
+            this._quitfromDashMenuItem.actor.hide();
+
+    },
+
+    update: function(){
+
+      if(SHOW_WINDOWS_PREVIEW){
+      // Update the menu items in place on windows-change. As action changing the app windows (closing)
+      // are performed from the menu itself.
+
+          let app = this._source.app;
+          let count = getAppInterestingWindows(app).length;
+
+          // show, hide or remove the quit menu
+          if ( count > 0) {
+              let quitFromDashMenuText = "";
+              if (count == 1)
+                  this._quitfromDashMenuItem.label.set_text(_("Quit"));
+              else
+                  this._quitfromDashMenuItem.label.set_text(_("Quit " + count + " Windows"));
+
+              this._quitfromDashMenuItem.actor.show();
+
+          } else {
+              this._quitfromDashMenuItem.actor.hide();
+          }
+
+
+          // update, show, or hide the allWindows menu
+
+
+          let windows = this._source.app.get_windows().filter(function(w) {
+              return !w.skip_taskbar;
+          });
+
+          // Removals are already handed connecting to the destroy signal of the metaWindowActor. 
+          // Regenerate the menu only when windows are added
+
+          let old_windows = this._allWindowsMenuItem.menu._getMenuItems().map(function(item){
+              if (item._window)
+                  return item._window;
+          })
+
+          new_windows = windows.filter(function(w) {return old_windows.indexOf(w) < 0;});
+          if (new_windows.length > 0) {
+
+              this._allWindowsMenuItem.menu.removeAll();
+
+              if (windows.length > 0) {
+
+                  let activeWorkspace = global.screen.get_active_workspace();
+                  let separatorShown =  windows[0].get_workspace() != activeWorkspace;
+
+                  for (let i = 0; i < windows.length; i++) {
+                      let window = windows[i];
+                      if (!separatorShown && window.get_workspace() != activeWorkspace) {
+                          this._allWindowsMenuItem.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+                          separatorShown = true;
+                      }
+
+                      let item = new WindowPreviewMenuItem(window);
+                      this._allWindowsMenuItem.menu.addMenuItem(item);
+                      item.connect('activate', Lang.bind(this, function() {
+                          this.emit('activate-window', window);
+                      }));
+                  }
+                  this._allWindowsMenuItem.actor.show();
+              } else {
+                  this._allWindowsMenuItem.actor.hide();
+              }
+          }
+
+          this._getMenuItems().forEach(Lang.bind(this, this._updateSeparatorVisibility));
+      }
+
     }
 });
 Signals.addSignalMethods(myAppIconMenu.prototype);
