@@ -355,12 +355,13 @@ const WindowPreviewMenuItem = new Lang.Class({
     _cloneTexture: function(metaWin){
 
         let mutterWindow = metaWin.get_compositor_private();
-        if (!mutterWindow) {
+
+        if (!mutterWindow || !mutterWindow.get_texture() || !mutterWindow.get_texture().get_size()[0]) {
             // Newly-created windows are added to a workspace before
             // the compositor finds out about them...
             let id = Mainloop.idle_add(Lang.bind(this,
-                                            function () {
-                                                if (metaWin.get_compositor_private())
+                                            function () { global.log(' **** CHECK *** ')
+                                                if (this.actor && metaWin.get_workspace())
                                                     this._cloneTexture(metaWin);
                                                 return GLib.SOURCE_REMOVE;
                                             }));
