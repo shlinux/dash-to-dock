@@ -1805,8 +1805,8 @@ const myAppIcon = new Lang.Class({
 
       if (this._menu && this._menu.isOpen) {
         //Mainloop.timeout_add( 1000, Lang.bind(this, function(){
-              this._menu._redisplay();
-              this._menu._getMenuItems().forEach(Lang.bind(this._menu, this._menu._updateSeparatorVisibility));
+              //this._menu._redisplay();
+              this._menu.update();
         //}));
       }
 
